@@ -6,3 +6,6 @@ free_tier_confirmed   = false
 swap_size_mib         = 1024
 root_volume_size_gib  = 8
 cloudflared_version   = "2026.10.1"
+enable_duckdns        = true
+duckdns_subdomain     = "openstudy"
+web_ingress_cidrs     = []

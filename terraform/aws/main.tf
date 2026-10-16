@@ -2,13 +2,18 @@ locals {
   architecture = var.instance_type == "t4g.small" ? "arm64" : "x86_64"
   rpm_arch     = var.instance_type == "t4g.small" ? "aarch64" : "x86_64"
   token_path   = "/${var.name_prefix}/cloudflared/token"
+  duckdns_path = "/${var.name_prefix}/duckdns/token"
 
   user_data = templatefile("${path.module}/templates/bootstrap.sh.tftpl", {
-    aws_region          = var.aws_region
-    swap_size_mib       = var.swap_size_mib
-    cloudflared_version = var.cloudflared_version
-    rpm_arch            = local.rpm_arch
-    token_path          = local.token_path
+    aws_region            = var.aws_region
+    swap_size_mib         = var.swap_size_mib
+    cloudflared_version   = var.cloudflared_version
+    rpm_arch              = local.rpm_arch
+    token_path            = local.token_path
+    enable_duckdns        = var.enable_duckdns
+    duckdns_subdomain     = var.duckdns_subdomain
+    duckdns_path          = local.duckdns_path
+    duckdns_update_script = file("${path.module}/../../scripts/duckdns-update.py")
   })
 }
 
@@ -57,12 +62,23 @@ resource "aws_route_table_association" "public" {
 
 resource "aws_security_group" "server" {
   name_prefix = "${var.name_prefix}-"
-  description = "No inbound access; Cloudflare Tunnel and SSM use outbound connections."
+  description = "Optional direct HTTP/HTTPS; management uses outbound SSM."
   vpc_id      = aws_vpc.main.id
-  ingress     = []
+
+  ingress = [for port in length(var.web_ingress_cidrs) > 0 ? [80, 443] : [] : {
+    description      = "Direct web access."
+    from_port        = port
+    to_port          = port
+    protocol         = "tcp"
+    cidr_blocks      = var.web_ingress_cidrs
+    ipv6_cidr_blocks = []
+    prefix_list_ids  = []
+    security_groups  = []
+    self             = false
+  }]
 
   egress {
-    description = "Package updates, SSM and Cloudflare Tunnel."
+    description = "Package updates, SSM, DuckDNS and Cloudflare Tunnel."
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -121,6 +137,20 @@ resource "aws_iam_instance_profile" "server" {
   role = aws_iam_role.server.name
 }
 
+resource "aws_iam_role_policy" "duckdns" {
+  count = var.enable_duckdns ? 1 : 0
+  name  = "read-duckdns-token"
+  role  = aws_iam_role.server.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameter"]
+      Resource = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter${local.duckdns_path}"
+    }]
+  })
+}
+
 resource "aws_instance" "server" {
   ami                         = nonsensitive(data.aws_ssm_parameter.al2023.value)
   instance_type               = var.instance_type
@@ -165,6 +195,7 @@ resource "aws_instance" "server" {
     aws_route_table_association.public,
     aws_iam_role_policy.session_manager,
     aws_iam_role_policy.tunnel_token,
+    aws_iam_role_policy.duckdns,
   ]
 
   tags = { Name = var.name_prefix }

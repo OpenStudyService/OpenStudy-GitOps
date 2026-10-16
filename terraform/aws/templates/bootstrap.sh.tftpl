@@ -3,7 +3,7 @@ set -euo pipefail
 umask 077
 
 dnf upgrade --security --releasever=latest -y
-dnf install -y docker git jq chrony awscli-2
+dnf install -y docker git jq chrony awscli-2 python3
 dnf install -y 'https://github.com/cloudflare/cloudflared/releases/download/${cloudflared_version}/cloudflared-linux-${rpm_arch}.rpm'
 
 timedatectl set-timezone Asia/Seoul
@@ -78,3 +78,47 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now cloudflared
+
+%{ if enable_duckdns ~}
+cat > /usr/local/sbin/openstudy-duckdns-update.py <<'DUCKDNS_PY'
+${duckdns_update_script}
+DUCKDNS_PY
+chmod 0750 /usr/local/sbin/openstudy-duckdns-update.py
+
+cat > /etc/systemd/system/openstudy-duckdns.service <<'DUCKDNS_UNIT'
+[Unit]
+Description=Update DuckDNS from EC2 public IPv4
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=AWS_DEFAULT_REGION=${aws_region}
+Environment=DUCKDNS_TOKEN_PARAMETER=${duckdns_path}
+Environment=DUCKDNS_SUBDOMAIN=${duckdns_subdomain}
+StateDirectory=openstudy-duckdns
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 /usr/local/sbin/openstudy-duckdns-update.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+DUCKDNS_UNIT
+
+cat > /etc/systemd/system/openstudy-duckdns.timer <<'DUCKDNS_TIMER'
+[Unit]
+Description=Check EC2 public IPv4 for DuckDNS updates
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=15min
+RandomizedDelaySec=30
+Unit=openstudy-duckdns.service
+
+[Install]
+WantedBy=timers.target
+DUCKDNS_TIMER
+
+systemctl daemon-reload
+systemctl enable --now openstudy-duckdns.timer
+%{ endif ~}

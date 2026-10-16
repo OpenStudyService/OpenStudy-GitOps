@@ -14,7 +14,13 @@ mock_provider "aws" {
 
 variables {
   aws_account_id      = "123456789012"
+  aws_region          = "ap-northeast-2"
+  name_prefix         = "openstudy-prod"
+  instance_type       = "t4g.small"
   free_tier_confirmed = true
+  enable_duckdns      = true
+  duckdns_subdomain   = "openstudy"
+  web_ingress_cidrs   = []
 }
 
 run "server_security" {
@@ -49,6 +55,11 @@ run "server_security" {
     condition     = output.container_platform == "linux/arm64" && strcontains(data.aws_ssm_parameter.al2023.name, "arm64") && strcontains(local.user_data, "cloudflared-linux-aarch64.rpm")
     error_message = "The AMI, cloudflared RPM and application images must match Graviton."
   }
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.duckdns[0].policy).Statement[0].Resource == "arn:aws:ssm:ap-northeast-2:123456789012:parameter/openstudy-prod/duckdns/token" && output.duckdns_hostname == "openstudy.duckdns.org" && strcontains(local.user_data, "Environment=DUCKDNS_SUBDOMAIN=openstudy") && strcontains(local.user_data, "openstudy-duckdns.timer")
+    error_message = "DuckDNS must use its own scoped SSM parameter and a boot-enabled update timer."
+  }
 }
 
 run "legacy_x86" {
@@ -72,4 +83,40 @@ run "require_free_tier_review" {
   }
 
   expect_failures = [aws_instance.server]
+}
+
+run "direct_web_ports" {
+  command = plan
+
+  variables {
+    web_ingress_cidrs = ["0.0.0.0/0"]
+  }
+
+  assert {
+    condition     = toset([for rule in aws_security_group.server.ingress : rule.from_port]) == toset([80, 443]) && alltrue([for rule in aws_security_group.server.ingress : rule.from_port == rule.to_port && rule.protocol == "tcp" && rule.cidr_blocks == tolist(["0.0.0.0/0"])])
+    error_message = "Direct access must expose only HTTP/HTTPS for the configured CIDRs."
+  }
+}
+
+run "disable_duckdns" {
+  command = plan
+
+  variables {
+    enable_duckdns = false
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy.duckdns) == 0 && output.duckdns_token_parameter_name == null && !strcontains(local.user_data, "openstudy-duckdns.timer")
+    error_message = "Disabling DuckDNS must omit its credential permissions and update timer."
+  }
+}
+
+run "reject_full_hostname_as_subdomain" {
+  command = plan
+
+  variables {
+    duckdns_subdomain = "openstudy.duckdns.org"
+  }
+
+  expect_failures = [var.duckdns_subdomain]
 }

@@ -79,3 +79,31 @@ variable "cloudflared_version" {
     error_message = "Use a cloudflared release such as 2026.10.1."
   }
 }
+
+variable "enable_duckdns" {
+  description = "Synchronize the DuckDNS A record with the instance public IPv4 at boot and after IP changes."
+  type        = bool
+  default     = true
+}
+
+variable "duckdns_subdomain" {
+  description = "DuckDNS subdomain registered by the token owner, without .duckdns.org."
+  type        = string
+  default     = "openstudy"
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.duckdns_subdomain))
+    error_message = "Use a single lowercase DNS label such as openstudy, without .duckdns.org."
+  }
+}
+
+variable "web_ingress_cidrs" {
+  description = "IPv4 CIDRs allowed to access TCP 80/443 directly. Empty keeps all inbound ports closed for Tunnel operation."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.web_ingress_cidrs : can(cidrnetmask(cidr))])
+    error_message = "Use IPv4 CIDR ranges, or an empty list for no inbound web access."
+  }
+}

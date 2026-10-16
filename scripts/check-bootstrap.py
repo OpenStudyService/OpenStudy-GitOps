@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Render each supported platform and check shell syntax without executing bootstrap."""
 
+import ast
 import base64
 import json
 from pathlib import Path
@@ -23,6 +24,9 @@ for instance_type in ("t4g.small", "t3.micro"):
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)
     runner = script.split("<<'RUNNER'\n", 1)[1].split("\nRUNNER", 1)[0]
     subprocess.run(["bash", "-n"], input=runner, text=True, check=True)
+    if "<<'DUCKDNS_PY'\n" in script:
+        updater = script.split("<<'DUCKDNS_PY'\n", 1)[1].split("\nDUCKDNS_PY", 1)[0]
+        ast.parse(updater)
     if len(script.encode()) > 16384:
         raise SystemExit("EC2 user data exceeds the 16 KiB limit.")
     if "${" in script:

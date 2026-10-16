@@ -9,8 +9,9 @@ Git에 기록한 배포 설정을 기준으로 서버의 컨테이너 상태를 
 이 문서는 배포 설계와 운영 절차를 정의한다.
 현재 애플리케이션용 Compose 파일과 동기화 스크립트는 구현 전이다.
 AWS 네트워크와 서버는 이 저장소의 Terraform으로 구성한다.
-공개 주소는 `https://openstudy.ddns.net`으로 유지한다.
-DNS는 No-IP에서 관리한다. Cloudflare는 대시보드에서 수동 설정한다.
+공개 호스트명은 `openstudy.duckdns.org`을 사용한다.
+서버가 EC2 공인 IPv4를 DuckDNS에 자동 반영한다.
+Cloudflare를 추가할 경우 대시보드에서 수동 설정한다.
 
 ## 저장소 역할
 
@@ -27,9 +28,9 @@ GitOps 동기화 작업으로 인프라를 생성하거나 삭제하지 않는�
 ## 요청 경로
 
 ```text
-DNS 관리: No-IP / 공개 주소: https://openstudy.ddns.net
+현재 DNS 경로: openstudy.duckdns.org → EC2 공인 IPv4
 
-목표 요청 경로:
+Cloudflare 추가 시 목표 요청 경로:
 사용자 → Cloudflare HTTPS·WAF → Cloudflare Tunnel
        → EC2의 cloudflared → 로컬 API Gateway → 내부 Service
 ```
@@ -38,7 +39,9 @@ Cloudflare는 아직 연결 전이다.
 외부 호스트 연결과 인증서 검증을 마친 뒤 목표 요청 경로를 확인한다.
 연결 조건은 [Cloudflare 수동 설정](cloudflare-manual.md)을 따른다.
 
-EC2 보안 그룹은 인바운드 규칙을 두지 않는다.
+EC2 보안 그룹은 기본적으로 인바운드를 차단한다.
+직접 웹 접속은 `web_ingress_cidrs`로 TCP 80·443만 허용할 수 있다.
+웹 수신 서비스와 HTTPS 인증서는 별도로 구성한다.
 서버 관리는 AWS Systems Manager Session Manager로 수행한다.
 SSH 포트와 SSH 키를 사용하지 않는다.
 
@@ -82,8 +85,12 @@ Gateway와 Service의 이미지 버전은 따로 관리한다.
 Git에는 실제 `.env`, 비밀번호, 인증서 개인 키, 토큰을 저장하지 않는다.
 
 Tunnel 실행 토큰은 AWS Systems Manager Parameter Store의 SecureString으로 저장한다.
-EC2 역할은 지정한 토큰 하나만 읽을 수 있게 한다.
+EC2 역할은 지정한 경로의 토큰만 읽을 수 있게 한다.
 토큰 값은 Terraform 변수, state, EC2 user data에 넣지 않는다.
+
+DuckDNS 토큰은 별도의 SecureString에 저장한다.
+서버는 부팅 후와 약 15분 간격으로 공인 IP를 확인한다.
+IP가 바뀌면 DNS를 갱신한다. 설정은 [DuckDNS 연동 문서](duckdns.md)를 따른다.
 
 ## 이전 버전 복구
 

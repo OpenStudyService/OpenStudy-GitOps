@@ -24,10 +24,10 @@ Billing에서 계정 플랜, 혜택 만료일, 크레딧 잔액을 확인한다.
 `t3.micro`도 혜택이 만료된 계정에서는 무료라고 가정하지 않는다.
 EBS와 공인 IPv4 등 함께 생성하는 리소스의 비용도 확인한다.
 
-공개 호스트명은 `openstudy.ddns.net`으로 고정한다.
-DNS는 No-IP에서 유지한다. Cloudflare 설정은 대시보드에서 수행한다.
-현재 Cloudflare 연결은 진행 전이다.
-먼저 [수동 설정 문서](cloudflare-manual.md)의 외부 호스트 연결 조건을 확인한다.
+공개 호스트명은 `openstudy.duckdns.org`을 사용한다.
+본인 DuckDNS 계정에 `openstudy`를 등록하고 토큰을 준비한다.
+EC2 공인 IP 자동 갱신은 [DuckDNS 설정 문서](duckdns.md)를 따른다.
+Cloudflare는 아직 연결 전이다. 추가할 경우 대시보드에서 설정한다.
 
 ## 2. GitOps 연결 계약 확인
 
@@ -38,6 +38,7 @@ Service와 DB는 호스트 포트를 공개하지 않는다.
 
 이 단계에서는 애플리케이션 컨테이너를 생성하지 않는다.
 Tunnel 연결 상태와 실제 애플리케이션 응답은 따로 검증한다.
+EC2 직접 접속을 사용하려면 80·443 수신 서비스와 HTTPS 인증서를 별도로 구성한다.
 
 ## 3. 로컬 검증
 
@@ -69,26 +70,47 @@ terraform -chdir=terraform/aws apply aws.tfplan
 terraform -chdir=terraform/aws output
 ```
 
-인바운드 포트가 없는 보안 그룹과 최소 권한 EC2 역할을 생성한다.
+기본 보안 그룹은 인바운드를 차단한다.
+직접 웹 접속이 필요하면 `web_ingress_cidrs`에 허용할 IPv4 CIDR을 지정한다.
+이 설정은 TCP 80·443만 허용한다.
 EC2는 공인 IPv4로 아웃바운드 연결을 수행한다.
 시작 시 OS 보안 업데이트, Docker 설치, 스왑과 시간 동기화를 설정한다.
 서버 시간대는 `Asia/Seoul`을 사용한다.
 
-현재 IAM 역할은 Session Manager와 지정한 Tunnel 토큰 읽기만 허용한다.
+EC2 역할은 Session Manager와 지정한 Tunnel 토큰 읽기를 허용한다.
+DuckDNS를 활성화하면 지정한 DuckDNS 토큰 읽기도 허용한다.
 SSM Run Command, Patch Manager와 로그 외부 전송은 별도 구성 대상이다.
 관리자는 자신의 IAM 권한으로 Session Manager에 접속한다.
 
-## 5. Cloudflare 수동 설정
+## 5. DuckDNS 토큰 등록
 
-[No-IP 호스트명과 Cloudflare 수동 설정](cloudflare-manual.md)을 따른다.
-대시보드에서 Tunnel을 만들고 외부 호스트 연결 방식을 확인한다.
-Gateway 연결 대상은 `http://127.0.0.1:8080`으로 한다.
+기본값은 `enable_duckdns = true`, `duckdns_subdomain = "openstudy"`이다.
+파라미터 경로를 확인한다.
+
+```sh
+terraform -chdir=terraform/aws output -raw duckdns_token_parameter_name
+```
+
+AWS Parameter Store에서 위 경로에 Standard 등급의 SecureString을 생성한다.
+기본 경로는 `/openstudy-prod/duckdns/token`이다.
+기본 AWS 관리형 SSM 키를 사용한다.
+값에는 DuckDNS 계정의 token 문자열만 입력한다.
+토큰을 Terraform 변수나 Git에 기록하지 않는다.
+
+서버는 부팅 후와 약 15분 간격으로 공인 IPv4를 확인한다.
+IP가 변경되면 DuckDNS에 반영한다.
+상세 설정과 확인 명령은 [DuckDNS와 EC2 연동](duckdns.md)을 따른다.
+
+## 6. Cloudflare 수동 설정: 추가 사용 시
+
+현재 DNS는 EC2를 직접 가리킨다. DuckDNS 등록만으로 Cloudflare를 경유하지 않는다.
+Cloudflare를 추가하려면 [수동 설정 문서](cloudflare-manual.md)의 연결 조건을 먼저 확인한다.
+Tunnel의 Gateway 연결 대상은 `http://127.0.0.1:8080`으로 한다.
 
 Terraform은 AWS에만 적용한다.
 `terraform/cloudflare`는 이전 예제로 보관한다. 현재 배포에서는 적용하지 않는다.
-No-IP 호스트명의 DNS를 Cloudflare zone으로 이전하는 절차도 사용하지 않는다.
 
-## 6. Tunnel 토큰 등록
+### Tunnel 토큰 등록
 
 Cloudflare 대시보드에서 만든 Tunnel의 실행 토큰을 사용한다.
 AWS Parameter Store에 SecureString으로 등록한다.
@@ -124,12 +146,12 @@ aws ssm start-session \
 
 ```sh
 sudo cloud-init status --wait
-sudo systemctl is-active docker chronyd amazon-ssm-agent cloudflared
-sudo systemctl is-enabled docker chronyd amazon-ssm-agent cloudflared
+sudo systemctl is-active docker chronyd amazon-ssm-agent openstudy-duckdns.timer
+sudo systemctl is-enabled docker chronyd amazon-ssm-agent openstudy-duckdns.timer
 swapon --show
 timedatectl status
 sudo ss -lntup
-sudo journalctl -u cloudflared --since '-10 min' --no-pager
+sudo journalctl -u openstudy-duckdns.service --since '-30 min' --no-pager
 ```
 
 cloud-init 오류가 있으면 `/var/log/cloud-init-output.log`를 확인한다.
@@ -137,14 +159,15 @@ cloud-init 오류가 있으면 `/var/log/cloud-init-output.log`를 확인한다.
 SSH 데몬은 비활성 상태인지 확인한다.
 서버 중지·시작 후에도 스왑과 서비스가 복구되는지 확인한다.
 
-외부 호스트 연결 조건을 충족한 뒤 다음 항목을 확인한다.
+외부에서 다음 항목을 확인한다.
 
-- No-IP의 DNS가 검증한 Cloudflare 연결 대상으로 향하는지 확인한다.
-- HTTP 요청이 HTTPS로 이동하는지 확인한다.
-- HTTPS 인증서와 Tunnel 연결 상태를 확인한다.
-- EC2 공인 IP의 22·80·443·애플리케이션·DB 포트에 접속할 수 없는지 확인한다.
+- `dig +short openstudy.duckdns.org A`의 결과와 현재 EC2 공인 IPv4를 비교한다.
+- 22·애플리케이션·DB 포트의 외부 접근이 차단되는지 확인한다.
+- 80·443은 `web_ingress_cidrs`에 지정한 범위에서만 접근할 수 있는지 확인한다.
+- 웹 서버와 인증서를 구성한 뒤 HTTPS 응답과 HTTP 리디렉션을 확인한다.
 
-Gateway가 아직 없으면 도메인 요청에 502가 발생할 수 있다.
+Cloudflare를 추가한 경우에는 cloudflared 서비스와 Tunnel 연결 상태도 확인한다.
+Gateway가 아직 없으면 Tunnel 요청에 502가 발생할 수 있다.
 Gateway 배포 후 정상 응답까지 확인해야 전체 요청 경로 검증을 완료한다.
 
 ## state와 변경 관리
@@ -169,6 +192,7 @@ EC2는 종료 방지와 Terraform `prevent_destroy`를 설정한다.
 
 ## 출처
 
+- [DuckDNS API 명세](https://www.duckdns.org/spec.jsp)
 - [AWS EC2 프리티어 적용 기준](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-free-tier-usage.html)
 - [Session Manager 최소 권한 역할](https://docs.aws.amazon.com/systems-manager/latest/userguide/getting-started-create-iam-instance-profile.html)
 - [Cloudflare 무료 관리형 WAF](https://developers.cloudflare.com/waf/get-started/)
