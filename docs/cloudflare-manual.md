@@ -1,5 +1,7 @@
 # Cloudflare 추가 설정 순서
 
+[README로 돌아가기](../README.md)
+
 현재 경로는 `openstudy.duckdns.org → EC2 공인 IP`이다.
 이 설정만으로 Cloudflare HTTPS·WAF·Tunnel이 연결되지는 않는다.
 Cloudflare는 수동 설정한다. `terraform/cloudflare`는 현재 적용하지 않는다.

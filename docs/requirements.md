@@ -1,5 +1,7 @@
 # 요구조건과 검증 상태
 
+[README로 돌아가기](../README.md)
+
 ## 현재 범위
 
 Terraform으로 AWS를 구성하고 DuckDNS에 EC2 공인 IP를 자동 반영한다.

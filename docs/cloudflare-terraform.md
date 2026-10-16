@@ -1,5 +1,7 @@
 # Cloudflare 설정 문서 이동 안내
 
+[README로 돌아가기](../README.md)
+
 호스트명은 `openstudy.duckdns.org`을 사용한다.
 Cloudflare는 대시보드에서 수동 설정한다. Terraform 적용 대상은 AWS로 한정한다.
 

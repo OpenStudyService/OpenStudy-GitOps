@@ -1,5 +1,7 @@
 # DuckDNS 운영과 오류 해결
 
+[README로 돌아가기](../README.md)
+
 최초 설정은 [구축 절차의 1~7단계](setup.md)를 따른다.
 Terraform이 갱신 서비스를 설치하고, 서버가 DuckDNS API로 공인 IP를 반영한다.
 
