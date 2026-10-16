@@ -38,6 +38,7 @@ docs/                  구축 순서와 요구조건 검증
 7. 후속 작업에서 Gateway·Service 컨테이너를 배포하고 도메인 요청을 검증한다.
 
 세부 명령은 [구축 절차](docs/setup.md)를 따른다.
+Cloudflare를 처음 설정할 때는 [Terraform Cloudflare 설정 방법](docs/cloudflare-terraform.md)을 따른다.
 완료 여부는 [요구조건 검증표](docs/requirements.md)에 기록한다.
 
 ## 로컬 검증

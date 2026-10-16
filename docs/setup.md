@@ -80,6 +80,8 @@ SSM Run Command, Patch Manager와 로그 외부 전송은 별도 구성 대상�
 
 ## 5. Cloudflare 계획과 적용
 
+대시보드에서 도메인과 API 토큰을 준비하는 방법은 [Terraform Cloudflare 설정 방법](cloudflare-terraform.md)을 따른다.
+
 Cloudflare API 토큰에는 다음 권한을 대상 계정·zone으로 제한해 부여한다.
 
 | 범위 | 권한 |
