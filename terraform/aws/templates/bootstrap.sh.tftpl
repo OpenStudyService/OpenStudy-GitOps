@@ -1,0 +1,80 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+dnf upgrade --security --releasever=latest -y
+dnf install -y docker git jq chrony awscli-2
+dnf install -y 'https://github.com/cloudflare/cloudflared/releases/download/${cloudflared_version}/cloudflared-linux-${rpm_arch}.rpm'
+
+timedatectl set-timezone Asia/Seoul
+systemctl enable --now chronyd amazon-ssm-agent
+
+if [ ! -f /swapfile ]; then
+  dd if=/dev/zero of=/swapfile bs=1M count=${swap_size_mib} status=none
+  chmod 600 /swapfile
+  mkswap /swapfile
+fi
+if ! swapon --show=NAME --noheadings | grep -Fxq /swapfile; then
+  swapon /swapfile
+fi
+if ! grep -q '^/swapfile[[:space:]]' /etc/fstab; then
+  printf '/swapfile none swap sw 0 0\n' >> /etc/fstab
+fi
+printf 'vm.swappiness=10\n' > /etc/sysctl.d/99-openstudy.conf
+sysctl --system
+
+install -d -m 0755 /etc/docker /opt/openstudy
+install -d -m 0700 /etc/openstudy
+cat > /etc/docker/daemon.json <<'DOCKER'
+{
+  "log-driver": "local",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
+DOCKER
+systemctl enable --now docker
+systemctl disable --now sshd
+
+cat > /usr/local/sbin/openstudy-cloudflared <<'RUNNER'
+#!/bin/bash
+set -euo pipefail
+umask 077
+/usr/bin/aws ssm get-parameter \
+  --region '${aws_region}' \
+  --name '${token_path}' \
+  --with-decryption \
+  --query Parameter.Value \
+  --output text > /run/openstudy-cloudflared/token
+test -s /run/openstudy-cloudflared/token
+exec /usr/bin/cloudflared tunnel --no-autoupdate run \
+  --token-file /run/openstudy-cloudflared/token
+RUNNER
+chmod 0750 /usr/local/sbin/openstudy-cloudflared
+
+cat > /etc/systemd/system/cloudflared.service <<'UNIT'
+[Unit]
+Description=OpenStudy Cloudflare Tunnel
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+RuntimeDirectory=openstudy-cloudflared
+RuntimeDirectoryMode=0700
+ExecStart=/usr/local/sbin/openstudy-cloudflared
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now cloudflared

@@ -1,0 +1,8 @@
+account_id               = "00000000000000000000000000000000"
+zone_id                  = "11111111111111111111111111111111"
+hostname                 = "api.example.com"
+tunnel_name              = "openstudy-prod"
+origin_service           = "http://127.0.0.1:8080"
+enable_api_rate_limit    = false
+api_path_prefix          = "/api/"
+requests_per_10_seconds   = 100

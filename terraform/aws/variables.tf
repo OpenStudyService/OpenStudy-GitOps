@@ -1,0 +1,81 @@
+variable "aws_account_id" {
+  description = "AWS account verified with STS before applying."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.aws_account_id))
+    error_message = "Set the 12-digit target AWS account ID."
+  }
+}
+
+variable "aws_region" {
+  description = "AWS deployment region."
+  type        = string
+  default     = "ap-northeast-2"
+
+  validation {
+    condition     = can(regex("^[a-z]{2}(-[a-z]+)+-[0-9]+$", var.aws_region))
+    error_message = "Use an AWS region such as ap-northeast-2."
+  }
+}
+
+variable "name_prefix" {
+  description = "Resource name prefix, also used for the SSM token path."
+  type        = string
+  default     = "openstudy-prod"
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{2,31}$", var.name_prefix))
+    error_message = "Use 3-32 lowercase letters, digits or hyphens, starting with a letter."
+  }
+}
+
+variable "instance_type" {
+  description = "Use t4g.small after checking account eligibility; t3.micro is the x86 alternative."
+  type        = string
+  default     = "t4g.small"
+
+  validation {
+    condition     = contains(["t4g.small", "t3.micro"], var.instance_type)
+    error_message = "Choose t4g.small or t3.micro and review the account's Free Tier eligibility."
+  }
+}
+
+variable "free_tier_confirmed" {
+  description = "Set true only after checking the account plan, credit balance and selected instance."
+  type        = bool
+  default     = false
+}
+
+variable "swap_size_mib" {
+  description = "Swap size in MiB. Keep space available on the 8 GiB root volume."
+  type        = number
+  default     = 1024
+
+  validation {
+    condition     = contains([1024, 2048], var.swap_size_mib)
+    error_message = "Swap must be 1024 or 2048 MiB."
+  }
+}
+
+variable "root_volume_size_gib" {
+  description = "Encrypted gp3 root volume size in GiB."
+  type        = number
+  default     = 8
+
+  validation {
+    condition     = var.root_volume_size_gib >= 8 && floor(var.root_volume_size_gib) == var.root_volume_size_gib
+    error_message = "Use an integer volume size of at least 8 GiB."
+  }
+}
+
+variable "cloudflared_version" {
+  description = "Pinned official cloudflared RPM release."
+  type        = string
+  default     = "2026.10.1"
+
+  validation {
+    condition     = can(regex("^[0-9]{4}\\.[0-9]{1,2}\\.[0-9]+$", var.cloudflared_version))
+    error_message = "Use a cloudflared release such as 2026.10.1."
+  }
+}
