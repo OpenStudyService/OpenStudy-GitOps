@@ -24,10 +24,10 @@ Billing에서 계정 플랜, 혜택 만료일, 크레딧 잔액을 확인한다.
 `t3.micro`도 혜택이 만료된 계정에서는 무료라고 가정하지 않는다.
 EBS와 공인 IPv4 등 함께 생성하는 리소스의 비용도 확인한다.
 
-Cloudflare에서는 도메인 등록과 네임서버 위임을 먼저 완료한다.
-대상 zone의 상태가 Active인지 확인한다.
-Account ID, Zone ID, API 호스트명을 확인한다.
-호스트명은 `api.example.com`과 같은 형식을 사용한다.
+공개 호스트명은 `openstudy.ddns.net`으로 고정한다.
+DNS는 No-IP에서 유지한다. Cloudflare 설정은 대시보드에서 수행한다.
+현재 Cloudflare 연결은 진행 전이다.
+먼저 [수동 설정 문서](cloudflare-manual.md)의 외부 호스트 연결 조건을 확인한다.
 
 ## 2. GitOps 연결 계약 확인
 
@@ -78,68 +78,31 @@ EC2는 공인 IPv4로 아웃바운드 연결을 수행한다.
 SSM Run Command, Patch Manager와 로그 외부 전송은 별도 구성 대상이다.
 관리자는 자신의 IAM 권한으로 Session Manager에 접속한다.
 
-## 5. Cloudflare 계획과 적용
+## 5. Cloudflare 수동 설정
 
-대시보드에서 도메인과 API 토큰을 준비하는 방법은 [Terraform Cloudflare 설정 방법](cloudflare-terraform.md)을 따른다.
+[No-IP 호스트명과 Cloudflare 수동 설정](cloudflare-manual.md)을 따른다.
+대시보드에서 Tunnel을 만들고 외부 호스트 연결 방식을 확인한다.
+Gateway 연결 대상은 `http://127.0.0.1:8080`으로 한다.
 
-Cloudflare API 토큰에는 다음 권한을 대상 계정·zone으로 제한해 부여한다.
-
-| 범위 | 권한 |
-| --- | --- |
-| Account | Cloudflare Tunnel: Edit |
-| Zone | DNS: Edit |
-| Zone | Zone Settings: Edit |
-| Zone | Zone WAF: Edit — 요청 제한 규칙을 관리할 때 필요 |
-
-토큰은 `CLOUDFLARE_API_TOKEN` 환경 변수로 전달한다.
-Terraform 변수 파일에는 토큰을 넣지 않는다.
-셸 이력에 토큰 값을 직접 기록하지 않는다.
-
-```sh
-cp terraform/cloudflare/terraform.tfvars.example terraform/cloudflare/terraform.tfvars
-```
-
-실제 `account_id`, `zone_id`, `hostname`을 설정한다.
-`origin_service`가 Gateway의 로컬 수신 주소와 일치하는지 확인한다.
-DNS CNAME 대상은 Tunnel ID를 사용한다. EC2 공인 IP를 DNS에 기록하지 않는다.
-계획 단계에서 zone의 계정 소유권, 활성 상태와 호스트명 소속을 검사한다.
-
-Full(strict)와 HTTPS 강제 이동은 zone 전체에 적용한다.
-같은 zone의 다른 서비스도 이 설정을 지원하는지 확인한다.
-기존에 Terraform으로 관리할 DNS나 zone 설정이 있으면 먼저 state로 import한다.
-
-Cloudflare Free Managed Ruleset은 무료 플랜에서 기본 제공한다.
-대시보드에서 해당 규칙의 적용 상태를 확인한다.
-이 코드는 기존 관리형 WAF 규칙을 덮어쓰지 않는다.
-
-요청 제한이 필요하면 실제 API 경로를 확인한 뒤 `enable_api_rate_limit = true`로 설정한다.
-무료 플랜에 맞춰 규칙 하나와 10초 집계·차단 시간을 사용한다.
-기본값은 `/api/` 경로에 대해 IP당 10초에 100회로 설정한다.
-무료 플랜은 호스트 조건을 지원하지 않으므로 이 규칙은 zone 내 모든 호스트의 해당 경로에 적용한다.
-기존 `http_ratelimit` 규칙 집합이 있으면 새로 생성하지 않는다. 먼저 import하고 기존 규칙을 구성에 보존한다.
-
-```sh
-terraform -chdir=terraform/cloudflare init
-terraform -chdir=terraform/cloudflare plan -out=cloudflare.tfplan
-terraform -chdir=terraform/cloudflare apply cloudflare.tfplan
-```
+Terraform은 AWS에만 적용한다.
+`terraform/cloudflare`는 이전 예제로 보관한다. 현재 배포에서는 적용하지 않는다.
+No-IP 호스트명의 DNS를 Cloudflare zone으로 이전하는 절차도 사용하지 않는다.
 
 ## 6. Tunnel 토큰 등록
 
-실행자는 `sts:GetCallerIdentity`와 대상 경로의 `ssm:PutParameter` 권한을 사용한다.
-아래 스크립트는 Cloudflare에서 실행 토큰을 받아 Parameter Store에 SecureString으로 등록한다.
-기본 AWS 관리형 SSM 키를 사용한다.
-토큰은 권한 0600의 임시 파일로 전달한 뒤 파일을 삭제한다.
-Terraform state나 EC2 user data에는 토큰을 기록하지 않는다.
+Cloudflare 대시보드에서 만든 Tunnel의 실행 토큰을 사용한다.
+AWS Parameter Store에 SecureString으로 등록한다.
+파라미터 경로는 다음 명령으로 확인한다.
 
 ```sh
-python3 scripts/configure-tunnel.py \
-  --account-id "$(terraform -chdir=terraform/cloudflare output -raw account_id)" \
-  --tunnel-id "$(terraform -chdir=terraform/cloudflare output -raw tunnel_id)" \
-  --parameter-name "$(terraform -chdir=terraform/aws output -raw tunnel_token_parameter_name)" \
-  --aws-account-id "$(terraform -chdir=terraform/aws output -raw aws_account_id)" \
-  --region "$(terraform -chdir=terraform/aws output -raw aws_region)"
+terraform -chdir=terraform/aws output -raw tunnel_token_parameter_name
 ```
+
+AWS 콘솔에서 위 경로에 Standard 등급의 SecureString을 생성한다.
+기본 AWS 관리형 SSM 키를 사용한다.
+값에는 Tunnel 토큰만 입력한다. Cloudflare의 설치 명령 전체를 입력하지 않는다.
+토큰은 Terraform 변수, state, EC2 user data나 Git에 기록하지 않는다.
+Cloudflare Terraform의 output은 사용하지 않는다.
 
 EC2의 cloudflared 서비스는 시작할 때 토큰을 읽는다.
 최초 토큰 등록 전에는 30초마다 다시 시작한다.
@@ -174,9 +137,9 @@ cloud-init 오류가 있으면 `/var/log/cloud-init-output.log`를 확인한다.
 SSH 데몬은 비활성 상태인지 확인한다.
 서버 중지·시작 후에도 스왑과 서비스가 복구되는지 확인한다.
 
-외부에서 다음 항목을 확인한다.
+외부 호스트 연결 조건을 충족한 뒤 다음 항목을 확인한다.
 
-- DNS 조회 결과가 EC2 IP가 아닌 Cloudflare 프록시 주소인지 확인한다.
+- No-IP의 DNS가 검증한 Cloudflare 연결 대상으로 향하는지 확인한다.
 - HTTP 요청이 HTTPS로 이동하는지 확인한다.
 - HTTPS 인증서와 Tunnel 연결 상태를 확인한다.
 - EC2 공인 IP의 22·80·443·애플리케이션·DB 포트에 접속할 수 없는지 확인한다.
@@ -186,7 +149,8 @@ Gateway 배포 후 정상 응답까지 확인해야 전체 요청 경로 검증�
 
 ## state와 변경 관리
 
-현재 AWS와 Cloudflare는 각각 별도의 로컬 state를 사용한다.
+현재 적용 대상인 AWS는 로컬 state를 사용한다.
+이전 Cloudflare 코드와 state가 있다면 수동 설정 전환 중 자동 삭제하지 않는다.
 state, 계획 파일과 실제 변수 파일은 Git에서 제외한다.
 적용 작업은 같은 state를 유지하는 작업 환경에서 수행한다.
 여러 작업자가 적용하기 전에는 암호화와 잠금을 사용하는 원격 backend로 전환한다.

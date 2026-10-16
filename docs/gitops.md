@@ -8,13 +8,15 @@ Git에 기록한 배포 설정을 기준으로 서버의 컨테이너 상태를 
 
 이 문서는 배포 설계와 운영 절차를 정의한다.
 현재 애플리케이션용 Compose 파일과 동기화 스크립트는 구현 전이다.
-네트워크와 서버는 이 저장소의 Terraform으로 구성한다.
+AWS 네트워크와 서버는 이 저장소의 Terraform으로 구성한다.
+공개 주소는 `https://openstudy.ddns.net`으로 유지한다.
+DNS는 No-IP에서 관리한다. Cloudflare는 대시보드에서 수동 설정한다.
 
 ## 저장소 역할
 
 | 저장소 | 관리 대상 |
 | --- | --- |
-| OpenStudy-Infra | AWS·Cloudflare 인프라, 서버 초기 설정, GitOps 배포·복구 절차 |
+| OpenStudy-Infra | AWS Terraform, Cloudflare 수동 설정 문서, 서버 초기 설정과 GitOps 운영 절차 |
 | 애플리케이션 저장소 | Gateway·Service 소스, 검사·테스트, 이미지 빌드 |
 
 Compose 배포 설정과 이미지 버전도 후속 단계에서 이 저장소에 추가한다.
@@ -25,9 +27,16 @@ GitOps 동기화 작업으로 인프라를 생성하거나 삭제하지 않는�
 ## 요청 경로
 
 ```text
-사용자 → Cloudflare DNS·HTTPS·WAF → Cloudflare Tunnel
+DNS 관리: No-IP / 공개 주소: https://openstudy.ddns.net
+
+목표 요청 경로:
+사용자 → Cloudflare HTTPS·WAF → Cloudflare Tunnel
        → EC2의 cloudflared → 로컬 API Gateway → 내부 Service
 ```
+
+Cloudflare는 아직 연결 전이다.
+외부 호스트 연결과 인증서 검증을 마친 뒤 목표 요청 경로를 확인한다.
+연결 조건은 [Cloudflare 수동 설정](cloudflare-manual.md)을 따른다.
 
 EC2 보안 그룹은 인바운드 규칙을 두지 않는다.
 서버 관리는 AWS Systems Manager Session Manager로 수행한다.
@@ -35,13 +44,13 @@ SSH 포트와 SSH 키를 사용하지 않는다.
 
 cloudflared는 호스트의 systemd 서비스로 실행한다.
 Gateway는 `127.0.0.1:8080`에만 포트를 연결하는 것을 기본 계약으로 한다.
-실제 Gateway 포트가 다르면 Infra의 `origin_service`도 함께 변경한다.
+실제 Gateway 포트가 다르면 Cloudflare 대시보드의 Service URL도 함께 변경한다.
 Service와 DB의 포트는 호스트에 공개하지 않는다.
 DB 실행 위치는 별도로 확정한다.
 
 Cloudflare에서 EC2까지의 구간은 Tunnel로 암호화한다.
 기본 로컬 구간인 cloudflared → Gateway는 루프백 HTTP를 사용한다.
-Cloudflare의 Full(strict) 설정은 이 로컬 HTTP 구간을 HTTPS로 바꾸지 않는다.
+Cloudflare의 TLS 설정은 이 로컬 HTTP 구간을 HTTPS로 바꾸지 않는다.
 
 ## 배포 순서
 
